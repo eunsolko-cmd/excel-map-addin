@@ -1,0 +1,112 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<title>창고 지도</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{--fg:#1d1d1f;--mut:#6e6e73;--line:#e5e5ea;--qbe:#1f6feb;--oth:#9aa0a6;--hot:#d1242f;--sel:#eef4ff}
+html,body{margin:0;height:100%;font-family:'Malgun Gothic',sans-serif;font-size:12px;color:var(--fg);background:#fff}
+#wrap{display:flex;flex-direction:column;height:100%}
+#bar{padding:8px 10px;border-bottom:1px solid var(--line)}
+#bar .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:3px 0}
+#bar input[type=number]{width:62px;padding:2px 4px}
+#st{color:var(--mut);font-size:11px}
+#map{height:46%;min-height:220px}
+#list{flex:1;overflow:auto}
+table{border-collapse:collapse;width:100%} th,td{border-bottom:1px solid var(--line);padding:4px 5px;text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:#fafafa;font-weight:600} td.n{text-align:right;white-space:nowrap}
+tr.r{cursor:pointer} tr.sel{background:var(--sel)} .hot{color:var(--hot);font-weight:700} .q{color:var(--qbe);font-weight:700}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin:0 3px 0 6px}
+button{padding:3px 8px}
+</style></head><body><div id="wrap">
+<div id="bar">
+ <div class="row">반경 <input id="r" type="number" value="500" step="100" min="50">m
+  한도 <input id="lim" type="number" value="70" step="10" min="1">억 · 몫 <input id="share" type="number" value="100" step="1" min="1" max="100">%</div>
+ <div class="row"><label><input id="onlyq" type="checkbox"> 표시 칸 있는 것만</label> <button id="reload">시트 다시 읽기</button></div>
+ <div class="row" style="color:var(--mut)"><span class="dot" style="background:var(--qbe)"></span>표시 칸 있음<span class="dot" style="background:var(--oth)"></span>없음<span class="dot" style="border:2px solid var(--hot)"></span>반경 안 다른 창고</div>
+ <div id="st">시트 읽는 중…</div>
+</div>
+<div id="map"></div>
+<div id="list"><table><thead><tr><th>No.</th><th>창고</th><th class="n">TSI억</th><th class="n">반경 내</th><th class="n">누적억</th></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+<script>
+// 시트 규칙: 처음 15줄 안에서 Latitude·Longitude 머리칸을 찾고, 같은 줄의 No. · Property Name · Total Sum Insured · (선택) 「QBE」가 들어간 칸을 쓴다.
+let pts = [], meta = null, map, layers = [], circle = null, rowsEl = {};
+const eok = v => (+v || 0) / 1e8;
+const $ = id => document.getElementById(id);
+function dist(a, b){const R=6371000,t=Math.PI/180,dl=(b.lat-a.lat)*t,dn=(b.lon-a.lon)*t;
+ const h=Math.sin(dl/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+const find = (hdr, re) => hdr.findIndex(h => re.test(String(h || '')));
+
+async function readSheet(){
+ await Excel.run(async ctx => {
+  const ws = ctx.workbook.worksheets.getActiveWorksheet();
+  const used = ws.getUsedRange(); used.load('values,rowIndex,columnIndex,address'); ws.load('name');
+  await ctx.sync();
+  const v = used.values; let hi = -1;
+  for (let i = 0; i < Math.min(15, v.length); i++) if (find(v[i], /^\s*latitude/i) >= 0) { hi = i; break; }
+  if (hi < 0) { $('st').textContent = `「${ws.name}」 시트에 Latitude 칸이 없습니다.`; pts = []; return; }
+  const hdr = v[hi];
+  const c = { no: find(hdr, /^\s*no\.?\s*$/i), name: find(hdr, /property name/i), lat: find(hdr, /^\s*latitude/i), lon: find(hdr, /^\s*longitude/i),
+   tsi: find(hdr, /total sum insured/i), addr: find(hdr, /road name|location/i), type: find(hdr, /storage type/i), q: find(hdr, /qbe/i) };
+  pts = [];
+  for (let i = hi + 1; i < v.length; i++) {
+   const r = v[i], lat = +r[c.lat], lon = +r[c.lon];
+   if (!lat || !lon) continue;
+   pts.push({ sheetRow: used.rowIndex + i, no: c.no >= 0 ? r[c.no] : i, name: c.name >= 0 ? r[c.name] : '', lat, lon,
+     tsi: c.tsi >= 0 ? +r[c.tsi] || 0 : 0, addr: c.addr >= 0 ? r[c.addr] : '', type: c.type >= 0 ? r[c.type] : '',
+     q: c.q >= 0 ? String(r[c.q] || '').trim() : '' });
+  }
+  meta = { sheet: ws.name, firstCol: used.columnIndex, hasQ: c.q >= 0 };
+  $('st').textContent = `「${ws.name}」 · 좌표 있는 줄 ${pts.length}개` + (meta.hasQ ? ` · 표시 칸 있는 것 ${pts.filter(p => p.q).length}개` : '');
+ });
+}
+
+function render(){
+ layers.forEach(l => map.removeLayer(l)); layers = []; if (circle) { map.removeLayer(circle); circle = null; }
+ const R = +$('r').value || 500, lim = (+$('lim').value || 70) * 1e8, share = (+$('share').value || 100) / 100;
+ const base = $('onlyq').checked ? pts.filter(p => p.q) : pts;
+ const rows = base.map(p => { const near = base.filter(o => o !== p && dist(p, o) <= R);
+  return { p, near, acc: (p.tsi + near.reduce((s, o) => s + o.tsi, 0)) * share }; }).sort((a, b) => b.acc - a.acc);
+ const tb = $('tb'); tb.innerHTML = ''; rowsEl = {};
+ rows.forEach(r => {
+  const p = r.p, col = p.q ? '#1f6feb' : '#9aa0a6';
+  const m = L.circleMarker([p.lat, p.lon], { radius: 4 + Math.sqrt(eok(p.tsi)) / 2.4, color: r.near.length ? '#d1242f' : col,
+   weight: r.near.length ? 3 : 1, fillColor: col, fillOpacity: .75 })
+   .bindPopup(`<b>${p.no}. ${p.name}</b><br>${p.addr}<br>${p.type}<br>TSI ${eok(p.tsi).toFixed(0)}억 · 반경 ${R}m 안 ${r.near.length}곳 · 누적(몫) ${eok(r.acc).toFixed(0)}억`).addTo(map);
+  m.on('click', () => pick(p, R, true)); layers.push(m);
+  const tr = document.createElement('tr'); tr.className = 'r';
+  tr.innerHTML = `<td class="${p.q ? 'q' : ''}">${p.no}</td><td>${p.name}</td><td class="n">${eok(p.tsi).toFixed(0)}</td><td class="n">${r.near.map(o => o.no).join(',')}</td><td class="n ${r.acc > lim ? 'hot' : ''}">${eok(r.acc).toFixed(0)}</td>`;
+  tr.onclick = () => { pick(p, R, true); m.openPopup(); }; tb.appendChild(tr); rowsEl[p.sheetRow] = tr;
+ });
+ if (layers.length) map.fitBounds(L.featureGroup(layers).getBounds().pad(0.1));
+}
+
+function pick(p, R, gotoSheet){
+ Object.values(rowsEl).forEach(t => t.classList.remove('sel')); if (rowsEl[p.sheetRow]) { rowsEl[p.sheetRow].classList.add('sel'); rowsEl[p.sheetRow].scrollIntoView({block:'nearest'}); }
+ if (circle) map.removeLayer(circle);
+ circle = L.circle([p.lat, p.lon], { radius: R, color: '#d1242f', weight: 1, fillOpacity: .06 }).addTo(map);
+ map.setView([p.lat, p.lon], Math.max(map.getZoom(), 14));
+ if (gotoSheet) Excel.run(async ctx => { ctx.workbook.worksheets.getActiveWorksheet().getRangeByIndexes(p.sheetRow, meta.firstCol, 1, 1).getEntireRow().select(); await ctx.sync(); }).catch(() => {});
+}
+
+async function refresh(){ try { await readSheet(); render(); } catch (e) { $('st').textContent = '오류: ' + e.message; } }
+
+Office.onReady(async () => {
+ map = L.map('map').setView([36.5, 127.8], 7);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+ ['r', 'lim', 'share', 'onlyq'].forEach(id => $(id).addEventListener('input', render));
+ $('reload').onclick = refresh;
+ await refresh();
+ // 시트를 바꾸거나 고치면 다시 읽는다. 시트에서 줄을 고르면 지도가 그 창고로 간다.
+ Excel.run(async ctx => {
+  ctx.workbook.worksheets.onActivated.add(refresh);
+  ctx.workbook.worksheets.onChanged.add(() => { clearTimeout(window._t); window._t = setTimeout(refresh, 800); });
+  ctx.workbook.worksheets.onSelectionChanged.add(async ev => {
+   await Excel.run(async c2 => { const r = c2.workbook.getSelectedRange(); r.load('rowIndex'); await c2.sync();
+    const p = pts.find(x => x.sheetRow === r.rowIndex); if (p) pick(p, +$('r').value || 500, false); });
+  });
+  await ctx.sync();
+ }).catch(() => {});
+});
+</script></body></html>
