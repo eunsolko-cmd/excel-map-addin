@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>송금신청 취합</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="logic.js"></script>
+<style>
+  :root { --fg:#1b1b1b; --muted:#5c5c5c; --line:#d6d6d6; --bg:#ffffff; --accent:#0f5c8a; --warn:#a14a00; --ok:#1f6b3a; }
+  body { font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 13px; color: var(--fg); background: var(--bg); margin: 0; padding: 12px; }
+  h1 { font-size: 15px; margin: 0 0 10px; }
+  h2 { font-size: 13px; margin: 16px 0 6px; }
+  .step { border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+  button { font: inherit; padding: 6px 10px; margin: 2px 4px 2px 0; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer; }
+  button.sub { background: #fff; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  .muted { color: var(--muted); }
+  .warn { color: var(--warn); }
+  .ok { color: var(--ok); }
+  table { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 12px; }
+  th, td { border: 1px solid var(--line); padding: 3px 5px; text-align: left; vertical-align: top; }
+  th { background: #efefef; }
+  td.num { text-align: right; white-space: nowrap; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  #log { white-space: pre-wrap; font-size: 11px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>코리안리 송금신청 취합</h1>
+
+<div class="step">
+  <h2>1. 장부</h2>
+  <div class="muted">코리안리 미청산 장부 메일을 열고 누르세요. 첨부 엑셀(fac · xol 시트)을 읽습니다.</div>
+  <button id="btnLedger">열린 메일 첨부를 장부로 쓰기</button>
+  <label class="muted">또는 파일 고르기 <input type="file" id="fileLedger" accept=".xlsx,.xls"></label>
+  <div id="ledgerInfo" class="muted">아직 장부 없음</div>
+</div>
+
+<div class="step">
+  <h2>2. 담당자 송금신청 메일</h2>
+  <div class="muted">메일을 하나씩 열고 「이 메일 더하기」, 또는 여러 통을 선택하고 「선택한 메일 모두 더하기」.</div>
+  <button id="btnAdd">이 메일 더하기</button>
+  <button id="btnAddSel" class="sub">선택한 메일 모두 더하기</button>
+  <button id="btnClear" class="sub">비우기</button>
+  <ul id="mailList"></ul>
+</div>
+
+<div class="step">
+  <h2>3. 결과</h2>
+  <button id="btnRun">취합하기</button>
+  <button id="btnXlsx" class="sub" disabled>엑셀 내려받기</button>
+  <button id="btnCopySum" class="sub" disabled>요약 표 복사</button>
+  <button id="btnCopyRows" class="sub" disabled>송금신청 줄 복사</button>
+  <div id="resultInfo" class="muted"></div>
+  <div id="summary"></div>
+</div>
+<div id="log"></div>
+
+<script>
+(function () {
+  var ledger = null, ledgerName = '', mails = [], result = null;
+  var $ = function (id) { return document.getElementById(id); };
+  function log(s) { $('log').textContent = s; }
+  function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function fmt(n) { return (n === null || n === undefined || n === '') ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+
+  function setLedgerFromWorkbook(wb, name) {
+    var picks = wb.SheetNames.filter(function (n) { return ['fac', 'xol'].indexOf(n.toLowerCase()) >= 0; });
+    if (!picks.length) { $('ledgerInfo').innerHTML = '<span class="warn">fac · xol 시트가 없는 파일입니다: ' + esc(name) + '</span>'; return; }
+    var arrays = picks.map(function (n) { return XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
+    ledger = RemitLogic.ledgerFromSheets(arrays); ledgerName = name;
+    $('ledgerInfo').innerHTML = '<span class="ok">장부: ' + esc(name) + ' · ' + picks.join('+') + ' · ' + ledger.rows.length.toLocaleString() + '줄</span>';
+  }
+  function itemLabel(it) {
+    var from = it.from || it.sender; var who = from ? (from.displayName || from.emailAddress) : '';
+    var when = it.dateTimeCreated ? new Date(it.dateTimeCreated).toLocaleDateString('ko-KR') : '';
+    return (who || '보낸 사람 미상') + ' · ' + when + ' · ' + (it.subject || '');
+  }
+  function addMailHtml(label, html) {
+    var rows = RemitLogic.rowsFromMailHtml(html);
+    var reqs = RemitLogic.requestsFromRows(rows, label);
+    mails.push({ label: label, reqs: reqs });
+    renderMails();
+  }
+  function renderMails() {
+    $('mailList').innerHTML = mails.map(function (m, i) {
+      var cls = m.reqs.length ? '' : ' class="warn"';
+      return '<li' + cls + '>' + esc(m.label) + ' · 번호 ' + m.reqs.length + '개 <a href="#" data-i="' + i + '">빼기</a></li>';
+    }).join('');
+    Array.prototype.forEach.call($('mailList').querySelectorAll('a'), function (a) {
+      a.onclick = function (e) { e.preventDefault(); mails.splice(+a.getAttribute('data-i'), 1); renderMails(); };
+    });
+  }
+  function readCurrentLedger() {
+    var it = Office.context.mailbox.item;
+    if (!it) { log('열린 메일이 없습니다.'); return; }
+    var att = (it.attachments || []).filter(function (a) { return /\.xlsx?$/i.test(a.name || ''); });
+    if (!att.length) { log('이 메일에 엑셀 첨부가 없습니다.'); return; }
+    var a = att[0];
+    $('ledgerInfo').textContent = '읽는 중: ' + a.name + ' (큰 파일은 몇십 초 걸릴 수 있습니다)';
+    it.getAttachmentContentAsync(a.id, function (r) {
+      if (r.status !== Office.AsyncResultStatus.Succeeded) { log('첨부를 못 읽었습니다: ' + (r.error && r.error.message)); return; }
+      try { setLedgerFromWorkbook(XLSX.read(r.value.content, { type: 'base64' }), a.name); }
+      catch (e) { log('장부 엑셀을 풀지 못했습니다: ' + e.message); }
+    });
+  }
+  function addCurrentMail() {
+    var it = Office.context.mailbox.item;
+    if (!it) { log('열린 메일이 없습니다.'); return; }
+    it.body.getAsync(Office.CoercionType.Html, function (r) {
+      if (r.status !== Office.AsyncResultStatus.Succeeded) { log('본문을 못 읽었습니다: ' + (r.error && r.error.message)); return; }
+      addMailHtml(itemLabel(it), r.value);
+    });
+  }
+  function addSelectedMails() {
+    var mb = Office.context.mailbox;
+    if (!mb.getSelectedItemsAsync || !mb.loadItemByIdAsync) { log('이 Outlook 버전은 여러 통 선택을 지원하지 않습니다. 메일을 하나씩 열고 「이 메일 더하기」를 눌러 주세요.'); return; }
+    mb.getSelectedItemsAsync(function (r) {
+      if (r.status !== Office.AsyncResultStatus.Succeeded) { log('선택한 메일을 못 읽었습니다: ' + (r.error && r.error.message)); return; }
+      var list = r.value || [];
+      var next = function (i) {
+        if (i >= list.length) { log(list.length + '통 더함'); return; }
+        mb.loadItemByIdAsync(list[i].itemId, function (lr) {
+          if (lr.status !== Office.AsyncResultStatus.Succeeded) { next(i + 1); return; }
+          var li = lr.value;
+          li.body.getAsync(Office.CoercionType.Html, function (br) {
+            if (br.status === Office.AsyncResultStatus.Succeeded) addMailHtml(itemLabel(li), br.value);
+            li.unloadAsync(function () { next(i + 1); });
+          });
+        });
+      };
+      next(0);
+    });
+  }
+  function run() {
+    if (!ledger) { log('먼저 장부를 읽어 주세요.'); return; }
+    var reqs = []; mails.forEach(function (m) { reqs = reqs.concat(m.reqs); });
+    if (!reqs.length) { log('번호가 있는 신청 메일이 없습니다.'); return; }
+    result = RemitLogic.consolidate(reqs, ledger);
+    var needs = result.summary.filter(function (s) { return s['판정'] !== '전부 맞음' && s['판정'].indexOf('확인 필요') >= 0 || s['판정'] === '장부에 없음'; }).length;
+    $('resultInfo').innerHTML = '신청 ' + result.summary.length + '건 · 장부 줄 ' + result.picked.length + '개' + (needs ? ' · <span class="warn">확인 필요 ' + needs + '건</span>' : ' · <span class="ok">모두 맞음</span>');
+    var cols = ['신청번호', '계약자명', '화폐', '신청금액', '장부합계', '차이(장부-신청)', '줄수', '판정'];
+    $('summary').innerHTML = '<table><tr>' + cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') + '</tr>' +
+      result.summary.map(function (s) {
+        return '<tr>' + cols.map(function (c) {
+          var v = s[c], num = ['신청금액', '장부합계', '차이(장부-신청)', '줄수'].indexOf(c) >= 0;
+          var cls = c === '판정' ? (v === '전부 맞음' ? ' class="ok"' : (v.indexOf('확인') >= 0 || v === '장부에 없음' ? ' class="warn"' : '')) : (num ? ' class="num"' : '');
+          return '<td' + cls + '>' + esc(num && c !== '줄수' ? fmt(v) : v) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</table>';
+    ['btnXlsx', 'btnCopySum', 'btnCopyRows'].forEach(function (b) { $(b).disabled = false; });
+    log('');
+  }
+  function buildWorkbook() {
+    var wb = XLSX.utils.book_new();
+    var sumCols = ['담당 메일', '신청번호', '청산사코드', '계약자명', '화폐', '신청금액', '장부합계', '차이(장부-신청)', '줄수', '판정', '메일 줄'];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(result.summary, { header: sumCols }), '요약');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(result.picked, { header: result.header }), '송금신청');
+    return wb;
+  }
+  function download() {
+    var name = '코리안리 송금신청 취합_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    try {
+      var out = XLSX.write(buildWorkbook(), { bookType: 'xlsx', type: 'array' });
+      var url = URL.createObjectURL(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      log('내려받기를 시작했습니다: ' + name + ' (안 보이면 「요약 표 복사」·「송금신청 줄 복사」를 써 주세요)');
+    } catch (e) { log('내려받기 실패: ' + e.message + ' · 복사 버튼을 써 주세요'); }
+  }
+  function copyRows(objs, cols) {
+    var tsv = [cols.join('\t')].concat(objs.map(function (o) { return cols.map(function (c) { var v = o[c]; return v === null || v === undefined ? '' : String(v).replace(/[\t\r\n]+/g, ' '); }).join('\t'); })).join('\r\n');
+    var done = function () { log(objs.length + '줄을 복사했습니다. 엑셀에 붙여 넣으세요.'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(tsv).then(done, function () { fallback(tsv); done(); }); }
+    else { fallback(tsv); done(); }
+  }
+  function fallback(t) { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+
+  Office.onReady(function () {
+    $('btnLedger').onclick = readCurrentLedger;
+    $('fileLedger').onchange = function (e) {
+      var f = e.target.files[0]; if (!f) return;
+      var rd = new FileReader(); rd.onload = function () { setLedgerFromWorkbook(XLSX.read(new Uint8Array(rd.result), { type: 'array' }), f.name); }; rd.readAsArrayBuffer(f);
+    };
+    $('btnAdd').onclick = addCurrentMail;
+    $('btnAddSel').onclick = addSelectedMails;
+    $('btnClear').onclick = function () { mails = []; renderMails(); };
+    $('btnRun').onclick = run;
+    $('btnXlsx').onclick = download;
+    $('btnCopySum').onclick = function () { copyRows(result.summary, ['신청번호', '청산사코드', '계약자명', '화폐', '신청금액', '장부합계', '차이(장부-신청)', '판정', '담당 메일']); };
+    $('btnCopyRows').onclick = function () { copyRows(result.picked, result.header); };
+    if (Office.context.mailbox && Office.context.mailbox.addHandlerAsync) {
+      try { Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, function () { log(''); }); } catch (e) {}
+    }
+  });
+})();
+</script>
+</body>
+</html>
