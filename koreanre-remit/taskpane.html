@@ -25,11 +25,42 @@
   td.num { text-align: right; white-space: nowrap; }
   ul { margin: 4px 0; padding-left: 18px; }
   #log { white-space: pre-wrap; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .tabs { margin-bottom: 10px; }
+  .tab { background: #fff; color: var(--accent); }
+  .tab.on { background: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
-<h1>코리안리 송금신청 취합</h1>
+<h1>취합 도우미</h1>
+<div class="tabs"><button id="tabRemit" class="tab on">코리안리 송금신청</button><button id="tabTl" class="tab">Total List</button></div>
 
+<div class="step">
+  <h2>담당자 목록</h2>
+  <div class="muted">과장님이 담당자들께 보낸 요청 메일(송금신청 요청 · Total List & Endorsement)을 열고 누르면, 그 메일 받는 사람을 담당자 목록으로 씁니다. 누가 아직 안 냈는지 보여 줍니다.</div>
+  <button id="btnExpected" class="sub">열린 요청 메일 받는 사람으로 목록 만들기</button>
+  <div id="expectedInfo" class="muted">목록 없음(안 낸 사람 확인은 건너뜀)</div>
+</div>
+
+<div id="paneTl" style="display:none">
+<div class="step">
+  <h2>1. 담당자 Total List 메일</h2>
+  <div class="muted">담당자 회신 메일을 하나씩 열고 「이 메일 첨부 더하기」, 또는 여러 통 선택 후 「선택한 메일 모두 더하기」. 첨부 엑셀에서 필터로 남긴 줄(필터가 없으면 노란 칠 줄)을 이번 주 변경분으로 읽습니다.</div>
+  <button id="btnTlAdd">이 메일 첨부 더하기</button>
+  <button id="btnTlAddSel" class="sub">선택한 메일 모두 더하기</button>
+  <button id="btnTlClear" class="sub">비우기</button>
+  <ul id="tlList"></ul>
+</div>
+<div class="step">
+  <h2>2. 결과</h2>
+  <button id="btnTlRun">취합하기</button>
+  <button id="btnTlXlsx" class="sub" disabled>엑셀 내려받기</button>
+  <button id="btnTlCopy" class="sub" disabled>변경분 줄 복사</button>
+  <div id="tlInfo" class="muted"></div>
+  <div id="tlWho"></div>
+</div>
+</div>
+
+<div id="paneRemit">
 <div class="step">
   <h2>1. 장부</h2>
   <div class="muted">코리안리 미청산 장부 메일을 열고 누르세요. 첨부 엑셀(fac · xol 시트)을 읽습니다.</div>
@@ -56,11 +87,12 @@
   <div id="resultInfo" class="muted"></div>
   <div id="summary"></div>
 </div>
+</div>
 <div id="log"></div>
 
 <script>
 (function () {
-  var ledger = null, ledgerName = '', mails = [], result = null;
+  var ledger = null, ledgerName = '', mails = [], result = null, expected = [], tlParts = [], tlResult = null;
   var $ = function (id) { return document.getElementById(id); };
   function log(s) { $('log').textContent = s; }
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
@@ -78,17 +110,17 @@
     var when = it.dateTimeCreated ? new Date(it.dateTimeCreated).toLocaleDateString('ko-KR') : '';
     return (who || '보낸 사람 미상') + ' · ' + when + ' · ' + (it.subject || '');
   }
-  function addMailHtml(label, html) {
+  function addMailHtml(label, html, email) {
     var rows = RemitLogic.rowsFromMailHtml(html);
     var reqs = RemitLogic.requestsFromRows(rows, label);
-    mails.push({ label: label, reqs: reqs });
+    mails.push({ label: label, reqs: reqs, email: email || '' });
     renderMails();
   }
   function renderMails() {
     $('mailList').innerHTML = mails.map(function (m, i) {
       var cls = m.reqs.length ? '' : ' class="warn"';
       return '<li' + cls + '>' + esc(m.label) + ' · 번호 ' + m.reqs.length + '개 <a href="#" data-i="' + i + '">빼기</a></li>';
-    }).join('');
+    }).join('') + missingHtml(mails.map(function (m) { return m.email; }));
     Array.prototype.forEach.call($('mailList').querySelectorAll('a'), function (a) {
       a.onclick = function (e) { e.preventDefault(); mails.splice(+a.getAttribute('data-i'), 1); renderMails(); };
     });
@@ -111,7 +143,7 @@
     if (!it) { log('열린 메일이 없습니다.'); return; }
     it.body.getAsync(Office.CoercionType.Html, function (r) {
       if (r.status !== Office.AsyncResultStatus.Succeeded) { log('본문을 못 읽었습니다: ' + (r.error && r.error.message)); return; }
-      addMailHtml(itemLabel(it), r.value);
+      addMailHtml(itemLabel(it), r.value, senderEmail(it));
     });
   }
   function addSelectedMails() {
@@ -126,7 +158,7 @@
           if (lr.status !== Office.AsyncResultStatus.Succeeded) { next(i + 1); return; }
           var li = lr.value;
           li.body.getAsync(Office.CoercionType.Html, function (br) {
-            if (br.status === Office.AsyncResultStatus.Succeeded) addMailHtml(itemLabel(li), br.value);
+            if (br.status === Office.AsyncResultStatus.Succeeded) addMailHtml(itemLabel(li), br.value, senderEmail(li));
             li.unloadAsync(function () { next(i + 1); });
           });
         });
@@ -177,7 +209,103 @@
   }
   function fallback(t) { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
 
+  function senderEmail(it) { var f = it.from || it.sender; return f ? (f.emailAddress || '') : ''; }
+  function senderName(it) { var f = it.from || it.sender; return f ? (f.displayName || f.emailAddress || '') : ''; }
+  function setExpectedFromCurrent() {
+    var it = Office.context.mailbox.item; if (!it) { log('열린 메일이 없습니다.'); return; }
+    var list = (it.to || []).concat(it.cc || []);
+    var me = (Office.context.mailbox.userProfile && Office.context.mailbox.userProfile.emailAddress || '').toLowerCase();
+    expected = list.filter(function (r) { return r.emailAddress && r.emailAddress.toLowerCase() !== me && /@hwskorea\.com$|@howdenkorea\.com$/i.test(r.emailAddress); })
+      .map(function (r) { return { name: r.displayName || r.emailAddress, email: r.emailAddress }; });
+    $('expectedInfo').innerHTML = '담당자 ' + expected.length + '명: ' + esc(expected.map(function (e) { return e.name; }).join(', '));
+  }
+  function missingHtml(sentEmails) {
+    if (!expected.length) return '';
+    var s = sentEmails.map(function (e) { return (e || '').toLowerCase(); });
+    var miss = expected.filter(function (e) { return s.indexOf(e.email.toLowerCase()) < 0; });
+    return miss.length ? '<div class="warn">아직 안 낸 담당자 ' + miss.length + '명: ' + esc(miss.map(function (e) { return e.name; }).join(', ')) + '</div>'
+      : '<div class="ok">목록의 담당자 ' + expected.length + '명 모두 냈습니다.</div>';
+  }
+  /* ---- Total List ---- */
+  function tlFromItem(it, done) {
+    var att = (it.attachments || []).filter(function (a) { return /\.xlsx?$/i.test(a.name || ''); });
+    if (!att.length) { log('이 메일에 엑셀 첨부가 없습니다: ' + (it.subject || '')); done(); return; }
+    it.getAttachmentContentAsync(att[0].id, function (r) {
+      if (r.status !== Office.AsyncResultStatus.Succeeded) { log('첨부를 못 읽었습니다: ' + (r.error && r.error.message)); done(); return; }
+      try {
+        var wb = XLSX.read(r.value.content, { type: 'base64', cellStyles: true });
+        var parts = RemitLogic.totalListFromWorkbook(XLSX, wb, senderName(it) || att[0].name, senderEmail(it));
+        if (!parts.length) log('「파일번호」 머리줄이 있는 시트를 못 찾았습니다: ' + att[0].name);
+        parts.forEach(function (p) { p.file = att[0].name; tlParts.push(p); });
+      } catch (e) { log('엑셀을 풀지 못했습니다: ' + e.message); }
+      renderTl(); done();
+    });
+  }
+  function renderTl() {
+    $('tlList').innerHTML = tlParts.map(function (p, i) {
+      return '<li>' + esc(p.label) + ' · ' + esc(p.file || '') + ' · 이번 주 ' + p.rows.length + '건 (' + esc(p.how) + ', 전체 ' + p.dataRows + '줄) <a href="#" data-i="' + i + '">빼기</a></li>';
+    }).join('') + missingHtml(tlParts.map(function (p) { return p.email; }));
+    Array.prototype.forEach.call($('tlList').querySelectorAll('a'), function (a) {
+      a.onclick = function (e) { e.preventDefault(); tlParts.splice(+a.getAttribute('data-i'), 1); renderTl(); };
+    });
+  }
+  function tlAddCurrent() { var it = Office.context.mailbox.item; if (!it) { log('열린 메일이 없습니다.'); return; } tlFromItem(it, function () {}); }
+  function tlAddSelected() {
+    var mb = Office.context.mailbox;
+    if (!mb.getSelectedItemsAsync || !mb.loadItemByIdAsync) { log('이 Outlook 버전은 여러 통 선택을 지원하지 않습니다. 메일을 하나씩 열고 「이 메일 첨부 더하기」를 눌러 주세요.'); return; }
+    mb.getSelectedItemsAsync(function (r) {
+      if (r.status !== Office.AsyncResultStatus.Succeeded) { log('선택한 메일을 못 읽었습니다.'); return; }
+      var list = r.value || [];
+      var next = function (i) {
+        if (i >= list.length) { log(list.length + '통 확인'); return; }
+        mb.loadItemByIdAsync(list[i].itemId, function (lr) {
+          if (lr.status !== Office.AsyncResultStatus.Succeeded) { next(i + 1); return; }
+          tlFromItem(lr.value, function () { lr.value.unloadAsync(function () { next(i + 1); }); });
+        });
+      };
+      next(0);
+    });
+  }
+  function tlRun() {
+    if (!tlParts.length) { log('먼저 담당자 메일을 더해 주세요.'); return; }
+    tlResult = RemitLogic.consolidateTotalList(tlParts, expected);
+    var dup = tlResult.rows.filter(function (r) { return r['겹침']; }).length;
+    $('tlInfo').innerHTML = '담당자 ' + tlResult.who.length + '명 · 이번 주 변경 ' + tlResult.rows.length + '건' + (dup ? ' · <span class="warn">겹침 ' + dup + '건</span>' : '');
+    $('tlWho').innerHTML = '<table><tr><th>담당(보낸 사람)</th><th>이번 주 건수</th><th>읽은 방법</th><th>전체 줄</th></tr>' +
+      tlResult.who.map(function (w) { return '<tr><td>' + esc(w.담당) + '</td><td class="num">' + w.건수 + '</td><td>' + esc(w.방법) + '</td><td class="num">' + w.전체행 + '</td></tr>'; }).join('') + '</table>' +
+      missingHtml(tlParts.map(function (p) { return p.email; }));
+    $('btnTlXlsx').disabled = false; $('btnTlCopy').disabled = false; log('');
+  }
+  function tlDownload() {
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tlResult.rows, { header: tlResult.header }), '이번 주 변경분');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tlResult.who.map(function (w) { return { '담당(보낸 사람)': w.담당, '메일': w.메일, '이번 주 건수': w.건수, '읽은 방법': w.방법, '전체 줄': w.전체행 }; })
+      .concat(tlResult.missing.map(function (m) { return { '담당(보낸 사람)': m.name, '메일': m.email, '이번 주 건수': '안 냄' }; }))), '담당자별');
+    saveWb(wb, 'Total List 취합_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  }
+  function saveWb(wb, name) {
+    try {
+      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      var url = URL.createObjectURL(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      log('내려받기를 시작했습니다: ' + name + ' (안 보이면 복사 버튼을 써 주세요)');
+    } catch (e) { log('내려받기 실패: ' + e.message + ' · 복사 버튼을 써 주세요'); }
+  }
+  function showTab(t) {
+    $('paneRemit').style.display = t === 'remit' ? '' : 'none'; $('paneTl').style.display = t === 'tl' ? '' : 'none';
+    $('tabRemit').className = 'tab' + (t === 'remit' ? ' on' : ''); $('tabTl').className = 'tab' + (t === 'tl' ? ' on' : '');
+  }
+
   Office.onReady(function () {
+    $('tabRemit').onclick = function () { showTab('remit'); };
+    $('tabTl').onclick = function () { showTab('tl'); };
+    $('btnExpected').onclick = function () { setExpectedFromCurrent(); renderMails(); renderTl(); };
+    $('btnTlAdd').onclick = tlAddCurrent;
+    $('btnTlAddSel').onclick = tlAddSelected;
+    $('btnTlClear').onclick = function () { tlParts = []; renderTl(); };
+    $('btnTlRun').onclick = tlRun;
+    $('btnTlXlsx').onclick = tlDownload;
+    $('btnTlCopy').onclick = function () { copyRows(tlResult.rows, tlResult.header); };
     $('btnLedger').onclick = readCurrentLedger;
     $('fileLedger').onchange = function (e) {
       var f = e.target.files[0]; if (!f) return;

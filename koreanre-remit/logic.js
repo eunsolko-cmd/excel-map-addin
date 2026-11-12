@@ -155,6 +155,64 @@
     });
     return { picked: picked, summary: summary, header: ledger.header.concat(['신청번호', '판정', '담당 메일']) };
   }
-  var api = { rowsFromMailHtml: rowsFromMailHtml, requestsFromRows: requestsFromRows, ledgerFromSheets: ledgerFromSheets, consolidate: consolidate, tokensOf: tokensOf, numOf: numOf };
+  /* ---------- Total List: 담당자 제출 파일에서 이번 주 변경 줄 모으기 ----------
+     담당자 파일 = 회사 Total List 양식(머리줄 A칸 「파일번호」). 이번 주 줄은 필터로 남긴 «보이는 줄»,
+     필터가 없으면 노란 칠(FFFF00)이 있는 줄로 본다. SheetJS 는 cellStyles:true 로 읽어야 숨김·칠이 보인다. */
+  function totalListFromWorkbook(XLSX, wb, label, email) {
+    var out = [];
+    wb.SheetNames.forEach(function (sn) {
+      var ws = wb.Sheets[sn]; if (!ws || !ws['!ref']) return;
+      var a = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+      var hi = -1;
+      for (var i = 0; i < Math.min(a.length, 30); i++) { if (a[i] && String(a[i][0] || '').trim() === '파일번호') { hi = i; break; } }
+      if (hi < 0) return;
+      var rowsMeta = ws['!rows'] || [], anyHidden = false, range = XLSX.utils.decode_range(ws['!ref']);
+      for (var r = hi + 1; r < a.length; r++) if (rowsMeta[r] && rowsMeta[r].hidden) { anyHidden = true; break; }
+      var yellowRow = function (r) {
+        for (var c = range.s.c; c <= range.e.c; c++) {
+          var cell = ws[XLSX.utils.encode_cell({ r: r, c: c })];
+          var fg = cell && cell.s && cell.s.fgColor && cell.s.fgColor.rgb;
+          if (fg && /FFFF00$/i.test(fg)) return true;
+        }
+        return false;
+      };
+      var header = a[hi].map(function (x, j) { var h = String(x === null || x === undefined ? '' : x).replace(/\s+/g, ' ').trim(); return h || ('칸' + (j + 1)); });
+      var picked = [], dataRows = 0;
+      for (var r2 = hi + 1; r2 < a.length; r2++) {
+        var row = a[r2]; if (!row || row[0] === null || row[0] === undefined || String(row[0]).trim() === '') continue;
+        if (!/\d/.test(String(row[0]))) continue;
+        dataRows++;
+        var take = anyHidden ? !(rowsMeta[r2] && rowsMeta[r2].hidden) : yellowRow(r2);
+        if (take) picked.push(row);
+      }
+      out.push({ label: label, email: email || '', sheet: sn, header: header, rows: picked, dataRows: dataRows,
+        how: anyHidden ? '필터로 남긴 줄' : '노란 칠 줄', asOf: (a[0] && typeof a[0][0] === 'number') ? a[0][0] : null });
+    });
+    return out;
+  }
+  /* 여러 담당자 결과 + 요청 메일 받는 사람 목록 -> 한 표 + 담당자별 건수 + 안 낸 사람 */
+  function consolidateTotalList(parts, expected) {
+    var header = null, rows = [], byWho = {}, keys = {};
+    parts.forEach(function (p) {
+      if (!header) header = p.header;
+      var who = p.label;
+      byWho[who] = byWho[who] || { 담당: who, 메일: p.email, 시트: p.sheet, 건수: 0, 전체행: p.dataRows, 방법: p.how };
+      p.rows.forEach(function (r) {
+        var o = { '담당(보낸 사람)': who };
+        p.header.forEach(function (h, j) { o[h] = r[j] === undefined ? null : r[j]; });
+        var k = String(r[0]) + '|' + String(r[1] === null || r[1] === undefined ? '' : r[1]);
+        o['겹침'] = (keys[k] && keys[k] !== who) ? ('같은 파일번호·일련번호를 ' + keys[k] + '도 냄') : '';
+        if (!keys[k]) keys[k] = who;
+        rows.push(o);
+        byWho[who].건수++;
+      });
+    });
+    var sentEmails = parts.map(function (p) { return (p.email || '').toLowerCase(); });
+    var missing = (expected || []).filter(function (e) { return e.email && sentEmails.indexOf(e.email.toLowerCase()) < 0; });
+    return { header: ['담당(보낸 사람)'].concat(header || []).concat(['겹침']), rows: rows,
+      who: Object.keys(byWho).map(function (k) { return byWho[k]; }), missing: missing };
+  }
+  var api = { rowsFromMailHtml: rowsFromMailHtml, requestsFromRows: requestsFromRows, ledgerFromSheets: ledgerFromSheets, consolidate: consolidate, tokensOf: tokensOf, numOf: numOf,
+    totalListFromWorkbook: totalListFromWorkbook, consolidateTotalList: consolidateTotalList };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.RemitLogic = api;
 })(this);
