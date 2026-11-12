@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>3e7cd3e0-bb3b-421a-a0cf-c4a26466d758</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>HWS Korea</ProviderName>
+  <DefaultLocale>ko-KR</DefaultLocale>
+  <DisplayName DefaultValue="채번"/>
+  <Description DefaultValue="파일번호를 규칙대로 만들고 채번대장 시트에 기록한다"/>
+  <IconUrl DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/icon-64.png"/>
+  <SupportUrl DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/taskpane.html"/>
+  <AppDomains>
+    <AppDomain>https://eunsolko-cmd.github.io</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="Taskpane.Url"/>
+          </GetStarted>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="Fileno.Group">
+                <Label resid="Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16"/>
+                  <bt:Image size="32" resid="Icon.32"/>
+                  <bt:Image size="80" resid="Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="Fileno.Open">
+                  <Label resid="Button.Label"/>
+                  <Supertip>
+                    <Title resid="Button.Label"/>
+                    <Description resid="Button.Tip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16"/>
+                    <bt:Image size="32" resid="Icon.32"/>
+                    <bt:Image size="80" resid="Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>FilenoPane</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/fileno/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="채번"/>
+        <bt:String id="Group.Label" DefaultValue="채번"/>
+        <bt:String id="Button.Label" DefaultValue="채번"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="홈 탭의 채번 버튼을 누르면 오른쪽에 채번 창이 열립니다."/>
+        <bt:String id="Button.Tip" DefaultValue="파일번호를 규칙대로 만들고 채번대장 시트에 기록합니다."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

@@ -1,0 +1,111 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>채번</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+:root{--fg:#1d1d1f;--mut:#6e6e73;--line:#d9d9de;--soft:#f4f5f7;--acc:#1f4e8c;--acc-soft:#e8eef8;--bad:#c42b1c;--ok:#107c41;--warn:#9a6700}
+*{box-sizing:border-box}
+html,body{margin:0;font-family:'Malgun Gothic',sans-serif;font-size:13px;color:var(--fg);background:#fff}
+main{padding:12px 14px 24px}
+h1{font-size:15px;margin:0 0 10px}
+h2{font-size:13px;margin:18px 0 6px;color:var(--mut);font-weight:600}
+label.f{display:block;margin:9px 0 3px;font-weight:600;font-size:12px}
+input[type=text],input[type=date]{width:100%;padding:6px 7px;border:1px solid var(--line);border-radius:4px;font:inherit}
+input:focus{outline:2px solid var(--acc-soft);border-color:var(--acc)}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{flex:1;min-width:0;padding:6px 4px;border:1px solid var(--line);background:#fff;border-radius:4px;font:inherit;cursor:pointer;white-space:nowrap}
+.seg button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.seg small{display:block;font-size:10px;opacity:.75}
+.chk{display:flex;gap:6px;align-items:flex-start;margin-top:8px;font-size:12px}
+.hint{color:var(--mut);font-size:11px;margin-top:3px}
+#preview{margin:14px 0 8px;padding:12px;border-radius:6px;background:var(--soft);text-align:center}
+#preview .lab{font-size:11px;color:var(--mut)}
+#preview .num{font-size:22px;font-weight:700;letter-spacing:.5px;margin-top:2px;font-family:Consolas,'Malgun Gothic',monospace}
+#preview.err .num{font-size:13px;color:var(--bad);font-family:inherit}
+#preview.skip .num{font-size:14px;color:var(--warn);font-family:inherit}
+#warns{font-size:11px;color:var(--warn);margin:4px 0}
+.btn{width:100%;padding:9px;border:0;border-radius:5px;background:var(--acc);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.btn:disabled{background:#b8c2d0;cursor:default}
+.btn2{padding:5px 9px;border:1px solid var(--line);border-radius:4px;background:#fff;font:inherit;font-size:12px;cursor:pointer}
+#done{display:none;margin-top:10px;padding:10px;border:1px solid #b7dfc6;background:#effaf3;border-radius:6px}
+#done .num{font-size:18px;font-weight:700;font-family:Consolas,'Malgun Gothic',monospace}
+#done .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#msg{font-size:12px;margin-top:8px;min-height:16px}
+#msg.bad{color:var(--bad)} #msg.ok{color:var(--ok)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td{padding:4px 3px;border-bottom:1px solid #eee;vertical-align:top}
+td.n{font-family:Consolas,'Malgun Gothic',monospace;white-space:nowrap;font-weight:600}
+tr.x td{color:#999;text-decoration:line-through}
+details{margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
+summary{cursor:pointer;color:var(--mut);font-weight:600;font-size:12px}
+.two{display:flex;gap:6px} .two>*{flex:1}
+</style></head><body><main>
+<h1>채번</h1>
+
+<label class="f" for="requester">요청자</label>
+<input type="text" id="requester" list="reqlist" placeholder="예: 고은솔">
+<datalist id="reqlist"></datalist>
+
+<div class="two">
+ <div><label class="f" for="contract">계약번호</label><input type="text" id="contract" placeholder="예: 13284"></div>
+ <div style="flex:2"><label class="f" for="title">건 이름</label><input type="text" id="title" placeholder="예: Hanyang UY2026"></div>
+</div>
+
+<label class="f">원계약 / 배서</label>
+<div class="seg" data-k="kind"><button data-v="원계약">원계약</button><button data-v="배서">배서</button></div>
+
+<div id="endtBox" style="display:none">
+ <label class="f" for="bkg">BKG 금액(원)</label>
+ <input type="text" id="bkg" inputmode="numeric" placeholder="예: 8,000,000">
+ <div class="hint">500만원 이하 배서는 발번하지 않습니다.</div>
+ <label class="chk"><input type="checkbox" id="preChange"> <span>사명변경(2026-10-23) 전에 시작한 계약<br><span class="hint">체크하면 번호 앞에 EN- 가 붙습니다.</span></span></label>
+</div>
+
+<label class="f">출재 오피스</label>
+<div class="seg" data-k="office">
+ <button data-v="HK">HK<small>직접</small></button>
+ <button data-v="HS">HS<small>싱가포르</small></button>
+ <button data-v="HU">HU<small>런던</small></button>
+</div>
+
+<label class="f">종목</label>
+<div class="seg" data-k="lob">
+ <button data-v="P">P<small>재물</small></button>
+ <button data-v="C">C<small>특종</small></button>
+ <button data-v="M">M<small>해상</small></button>
+ <button data-v="A">A<small>항공</small></button>
+</div>
+
+<label class="f" for="issueDate">발행일자</label>
+<input type="date" id="issueDate">
+
+<label class="f" for="note">비고</label>
+<input type="text" id="note" placeholder="(선택)">
+
+<div id="preview"><div class="lab">발급될 번호</div><div class="num" id="pnum">칸을 채워 주세요</div></div>
+<div id="warns"></div>
+<button class="btn" id="go" disabled>번호 발급하고 대장에 적기</button>
+
+<div id="done"><div class="row"><div><div class="hint">대장에 적었습니다</div><div class="num" id="dnum"></div></div><button class="btn2" id="copy">복사</button></div></div>
+<div id="msg"></div>
+
+<h2>최근 기록 <button class="btn2" id="reload" style="float:right">다시 읽기</button></h2>
+<table><tbody id="recent"><tr><td class="hint">대장을 읽는 중…</td></tr></tbody></table>
+<div style="margin-top:8px"><button class="btn2" id="cancelSel">엑셀에서 고른 줄을 취소로 표시</button></div>
+<div class="hint">취소한 번호는 다시 쓰지 않습니다. 다음 번호는 그 뒤로 넘어갑니다.</div>
+
+<details>
+ <summary>이미 나간 번호 옮겨 적기</summary>
+ <div class="hint" style="margin-top:6px">대장을 처음 쓸 때, 전에 드린 번호를 적어 두면 다음 번호가 그 뒤로 이어집니다.</div>
+ <label class="f" for="exNum">번호</label><input type="text" id="exNum" placeholder="예: HUP26110301">
+ <div class="two">
+  <div><label class="f" for="exContract">계약번호</label><input type="text" id="exContract"></div>
+  <div style="flex:2"><label class="f" for="exTitle">건 이름</label><input type="text" id="exTitle"></div>
+ </div>
+ <label class="f" for="exReq">요청자</label><input type="text" id="exReq" list="reqlist">
+ <div style="margin-top:8px"><button class="btn2" id="exGo">대장에 적기</button></div>
+</details>
+</main>
+<script src="logic.js"></script>
+<script src="taskpane.js"></script>
+</body></html>
