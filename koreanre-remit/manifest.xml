@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
+           xsi:type="MailApp">
+  <Id>d7b21585-326b-4058-9d51-1d2e9c17f24f</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>HWS Korea</ProviderName>
+  <DefaultLocale>ko-KR</DefaultLocale>
+  <DisplayName DefaultValue="송금신청 취합"/>
+  <Description DefaultValue="담당자 송금신청 메일의 코리안리 번호로 미청산 장부 줄을 찾아 송금신청 시트와 요약을 만듭니다."/>
+  <IconUrl DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/icon-128.png"/>
+  <SupportUrl DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/taskpane.html"/>
+  <AppDomains>
+    <AppDomain>https://eunsolko-cmd.github.io</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Mailbox"/>
+  </Hosts>
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.8"/>
+    </Sets>
+  </Requirements>
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/taskpane.html"/>
+        <RequestedHeight>450</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+  <Permissions>ReadItem</Permissions>
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
+  </Rule>
+  <DisableEntityHighlighting>true</DisableEntityHighlighting>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+      <Requirements>
+        <bt:Sets DefaultMinVersion="1.8">
+          <bt:Set Name="Mailbox"/>
+        </bt:Sets>
+      </Requirements>
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <DesktopFormFactor>
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="remitGroup">
+                  <Label resid="groupLabel"/>
+                  <Control xsi:type="Button" id="remitOpenPane">
+                    <Label resid="btnLabel"/>
+                    <Supertip>
+                      <Title resid="btnLabel"/>
+                      <Description resid="btnDesc"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16"/>
+                      <bt:Image size="32" resid="icon32"/>
+                      <bt:Image size="80" resid="icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="paneUrl"/>
+                      <SupportsPinning>true</SupportsPinning>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+      <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/icon-16.png"/>
+          <bt:Image id="icon32" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/icon-32.png"/>
+          <bt:Image id="icon80" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/icon-80.png"/>
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="paneUrl" DefaultValue="https://eunsolko-cmd.github.io/excel-map-addin/koreanre-remit/taskpane.html"/>
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="groupLabel" DefaultValue="HWS Korea"/>
+          <bt:String id="btnLabel" DefaultValue="송금신청 취합"/>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="btnDesc" DefaultValue="코리안리 장부와 담당자 송금신청 메일을 대조해 송금신청 시트와 요약을 만듭니다."/>
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>
